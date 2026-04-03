@@ -1,0 +1,71 @@
+from .javbus import JavBusCrawler
+from .javdb import JavDbCrawler
+import time
+
+class MetadataManager:
+    def __init__(self, config):
+        self.config = config
+        self.javbus = JavBusCrawler(config)
+        self.javdb = JavDbCrawler(config)
+        self.cache = {}
+
+    def get_metadata(self, code):
+        """Fetch metadata for a given code (ID). Try multiple sources."""
+        if not code or code == 'Unknown':
+            return None
+            
+        if code in self.cache:
+            return self.cache[code]
+            
+        # Try JavBus first
+        results = self.javbus.search(code, fetch_magnets=False)
+        if results:
+            best = results[0] # Usually the first result is the best match
+            metadata = {
+                'title': best['title'],
+                'cover': best['cover'],
+                'code': best['code'],
+                'date': best['date']
+            }
+            self.cache[code] = metadata
+            return metadata
+            
+        # Try JavDB
+        metadata = self.javdb.get_metadata(code)
+        if metadata:
+            self.cache[code] = metadata
+            return metadata
+            
+        return None
+
+    def enrich_results(self, results):
+        """Enrich results that are missing covers or other metadata."""
+        # Find unique codes from results that need enrichment
+        to_enrich = []
+        for r in results:
+            # If cover is a placeholder or empty, we enrich it
+            if not r.get('cover') or 'placeholder' in r.get('cover', ''):
+                if r['code'] not in to_enrich:
+                    to_enrich.append(r['code'])
+                    
+        # Batch fetch metadata (in parallel would be better but let's keep it simple for now)
+        # We only enrich the first 20 unique codes (full page) to avoid long response times
+        meta_map = {}
+        for code in to_enrich[:20]:
+            meta = self.get_metadata(code)
+            if meta:
+                meta_map[code] = meta
+                
+        # Apply enrichment
+        for r in results:
+            code = r['code']
+            if code in meta_map:
+                meta = meta_map[code]
+                if not r.get('cover') or 'placeholder' in r.get('cover', ''):
+                    r['cover'] = meta['cover']
+                if not r.get('title') or r.get('title') == 'No Title':
+                    r['title'] = meta['title']
+                if not r.get('date') or r.get('date') == 'Unknown':
+                    r['date'] = meta['date']
+                    
+        return results
