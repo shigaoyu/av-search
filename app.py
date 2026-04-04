@@ -4,7 +4,9 @@ from engine import get_crawlers
 from engine.manager import MetadataManager
 import re
 import httpx
+import requests
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -20,22 +22,18 @@ def proxy_image():
     url = request.args.get('url')
     if not url: return "No URL", 400
     
-    # Use global proxy config if available
+    # Use global proxy config if available (Borrowed from Download Team)
     proxy = Config.PROXY if hasattr(Config, 'PROXY') and Config.PROXY else None
     
-    def fetch_with_referer(target_url):
+    def fetch_with_requests(target_url):
         # Determine the best referer based on the target URL
-        # Logic inspired by "Download Team" for maximum stability
         domain = ""
         try:
             from urllib.parse import urlparse
             domain = urlparse(target_url).netloc
         except: pass
         
-        # Default referer is the domain itself or google
         referer = f"https://{domain}/" if domain else "https://www.google.com/"
-        
-        # Specific overrides for known strict hosts
         if any(x in target_url for x in ["javbus", "buscdn", "busun", "pics.javbus.com"]):
             referer = "https://www.javbus.com/"
         elif any(x in target_url for x in ["javdb", "jdbimgs.com"]):
@@ -44,35 +42,29 @@ def proxy_image():
             referer = "https://sukebei.nyaa.si/"
             
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": referer,
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
         }
         
-        # HTTP/1.1 is more stable for some proxies; verify=False avoids SSL handshake issues
-        with httpx.Client(proxy=proxy, follow_redirects=True, verify=False, timeout=15.0, http1=True) as client:
-            print(f"Proxying: {target_url} (Referer: {referer})")
-            return client.get(target_url, headers=headers)
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+        # requests is often more stable for low-level proxying than httpx in certain environments
+        return requests.get(target_url, headers=headers, proxies=proxies, timeout=15, verify=False)
 
     try:
-        resp = fetch_with_referer(url)
+        # Initial fetch
+        resp = fetch_with_requests(url)
         
-        # If JavBus high-res (_b.jpg) fails, try thumbnail as fallback
+        # Fallback for JavBus high-res if 404
         if resp.status_code == 404 and "_b.jpg" in url:
-            fallback_url = url.replace("_b.jpg", ".jpg").replace("/cover/", "/thumb/")
-            print(f"Proxy: 404 for high-res, trying fallback: {fallback_url}")
-            resp = fetch_with_referer(fallback_url)
+            fallback = url.replace("_b.jpg", ".jpg").replace("/cover/", "/thumb/")
+            resp = fetch_with_requests(fallback)
             
-        # Return the content with appropriate headers
-        headers = {
+        return Response(resp.content, resp.status_code, {
             "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
             "Cache-Control": "public, max-age=86400",
             "Access-Control-Allow-Origin": "*"
-        }
-        return Response(resp.content, resp.status_code, headers)
+        })
     except Exception as e:
         print(f"Proxy Image Error: {e}")
         return "Error", 500
@@ -81,52 +73,42 @@ def proxy_image():
 def search():
     query = request.args.get('q', '').upper()
     sort_type = request.args.get('sort', 'default')
-    movie_type = request.args.get('type', 'all') # censored, uncensored, all
+    movie_type = request.args.get('type', 'all')
     chinese_only = request.args.get('chinese', 'false').lower() == 'true'
     page = int(request.args.get('page', 1))
     
     results = []
-    print(f"Searching for: '{query}' on crawlers...")
+    print(f"Searching: '{query}' (Type: {movie_type}, Page: {page})")
     for crawler in crawlers:
         try:
             res = crawler.search(query, type=movie_type, page=page)
-            print(f"Crawler {crawler.__class__.__name__} found {len(res)} results.")
             results.extend(res)
         except Exception as e:
             print(f"Crawler error ({crawler.__class__.__name__}): {e}")
     
-    # Simple deduplication by magnet
-    seen_magnets = set()
-    unique_results = []
+    # Simple deduplication
+    seen = set()
+    unique = []
     for r in results:
-        if r['magnet'] not in seen_magnets:
-            seen_magnets.add(r['magnet'])
-            if chinese_only and not r['is_chinese']:
-                continue
-            unique_results.append(r)
+        if r['magnet'] not in seen:
+            seen.add(r['magnet'])
+            if chinese_only and not r['is_chinese']: continue
+            unique.append(r)
 
-    # Sorting logic
+    # Sort
     def sort_key(item):
-        size_val = parse_size(item['size'])
-        if sort_type == 'size':
-            return (size_val,)
-        elif sort_type == 'date':
-            d = item['date']
-            return (d if '-' in d else '0000-00-00',)
-        elif sort_type == 'seeders':
-            return (int(item.get('seeders', 0)),)
-        else: # default: Chinese subtitle > File size (desc)
-            return (1 if item['is_chinese'] else 0, size_val)
+        size = parse_size(item['size'])
+        if sort_type == 'size': return (size,)
+        elif sort_type == 'date': return (item['date'] if '-' in item['date'] else '0000-00-00',)
+        elif sort_type == 'seeders': return (int(item.get('seeders', 0) or 0),)
+        else: return (1 if item['is_chinese'] else 0, size)
 
-    unique_results.sort(key=sort_key, reverse=True)
+    unique.sort(key=sort_key, reverse=True)
     
     # Pagination
-    start_idx = (page - 1) * 20
-    end_idx = start_idx + 20
-    paginated_results = unique_results[start_idx:end_idx]
+    paginated = unique[(page-1)*20 : page*20]
     
-    # Metadata Enrichment (Async)
-    from concurrent.futures import ThreadPoolExecutor
+    # Enrichment
     def fill_metadata(item):
         code = item.get('code', 'Unknown')
         if not item.get('cover') or 'placeholder' in item.get('cover', ''):
@@ -139,34 +121,26 @@ def search():
                 if not item.get('date') or item.get('date') == 'Unknown':
                     item['date'] = meta.get('date', 'Unknown')
         
-        # Guarantee fields exist
-        if 'cover' not in item: item['cover'] = ""
-        item['image'] = item.get('cover', "")
-        item['img_url'] = item.get('cover', "")
-        if 'thumb' not in item: item['thumb'] = ""
-        
-        # Fallback to placeholder if still empty
-        if not item['cover']:
-            placeholder = f"https://via.placeholder.com/800x1200?text={code}"
-            item['cover'] = placeholder
-            item['image'] = placeholder
-            item['img_url'] = placeholder
-            item['thumb'] = placeholder.replace("800x1200", "300x450")
-            
+        # Ensure image fields
+        item['cover'] = item.get('cover') or f"https://via.placeholder.com/800x1200?text={code}"
+        item['thumb'] = item.get('thumb') or item['cover'].replace("800x1200", "300x450")
+        item['image'] = item['cover']
+        item['img_url'] = item['cover']
         return item
 
     with ThreadPoolExecutor(max_workers=10) as executor:
-        paginated_results = list(executor.map(fill_metadata, paginated_results))
+        paginated = list(executor.map(fill_metadata, paginated))
     
-    return jsonify(paginated_results)
+    return jsonify(paginated)
 
-def parse_size(size_str):
-    match = re.search(r"(\d+\.?\d*)\s*(GB|MB|GiB|MiB)", size_str, re.I)
-    if not match: return 0
-    val = float(match.group(1))
-    unit = match.group(2).upper()
-    if unit in ['GB', 'GIB']: return val * 1024
-    return val
+def parse_size(s):
+    m = re.search(r"(\d+\.?\d*)\s*(GB|MB|GiB|MiB|KB)", s, re.I)
+    if not m: return 0
+    v = float(m.group(1))
+    u = m.group(2).upper()
+    if u in ['GB', 'GIB']: return v * 1024
+    if u in ['KB']: return v / 1024
+    return v
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True)

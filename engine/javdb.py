@@ -15,17 +15,11 @@ class JavDbCrawler(BaseCrawler):
             url = f"{self.BASE_URL}/search?q={urllib.parse.quote(query)}&f=all&page={page}"
         
         try:
-            # JavDB often requires a User-Agent and handles cookies
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-            }
-            response = self.client.get(url, headers=headers)
-            if response.status_code != 200:
-                print(f"JavDB search failed with status {response.status_code}")
+            # Borrow headers and cookies logic from base and mirror rotation if needed
+            soup = self.fetch_page(url)
+            if not soup:
                 return []
             
-            soup = BeautifulSoup(response.text, 'html.parser')
             movie_items = soup.select(".movie-list .item")
             
             results = []

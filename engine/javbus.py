@@ -7,10 +7,10 @@ class JavBusCrawler(BaseCrawler):
     BASE_URL = "https://www.buscdn.me"
 
     def search(self, query, type='all', page=1, fetch_magnets=True):
-        # Mirror rotation for stability
-        mirrors = ["https://www.buscdn.me", "https://www.javbus.com", "https://www.busun.me"]
+        # Mirror rotation: prioritize javbus.com as it's the official most stable one
+        mirrors = ["https://www.javbus.com", "https://www.buscdn.me", "https://www.busun.me"]
         if type == 'uncensored':
-            mirrors = ["https://www.busun.me", "https://www.buscdn.me"]
+            mirrors = ["https://www.busun.me", "https://www.javbus.com"]
         
         for base in mirrors:
             if not query:
@@ -20,7 +20,7 @@ class JavBusCrawler(BaseCrawler):
                 
             # Set cookies for each mirror
             domain = base.split('//')[1]
-            self.client.cookies.set('existmag', 'mag', domain=domain)
+            self.client.cookies.set('existmag', 'all', domain=domain)
             self.client.cookies.set('age', '18', domain=domain)
             
             soup = self.fetch_page(search_url)
@@ -199,8 +199,14 @@ class JavBusCrawler(BaseCrawler):
             uc = re.search(r'var uc = (\d+);', script_text).group(1)
             img = re.search(r"var img = '(.+?)';", script_text).group(1)
             
-            ajax_url = f"{domain}/ajax/uncensored-search.php?gid={gid}&lang=zh&img={img}&uc={uc}&floor={100}"
-            ajax_res = self.client.get(ajax_url)
+            ajax_url = f"{domain}/ajax/uncledatoolsbyajax.php?gid={gid}&lang=zh&img={img}&uc={uc}&floor={100}"
+            # Some mirrors might still use the old one, but we prioritize the new one
+            ajax_res = self.client.get(ajax_url, headers={"Referer": detail_url, "X-Requested-With": "XMLHttpRequest"})
+            
+            if not ajax_res or ajax_res.status_code != 200:
+                # Try fallback to old endpoint
+                ajax_url_old = f"{domain}/ajax/uncensored-search.php?gid={gid}&lang=zh&img={img}&uc={uc}&floor={100}"
+                ajax_res = self.client.get(ajax_url_old, headers={"Referer": detail_url, "X-Requested-With": "XMLHttpRequest"})
             if not ajax_res or ajax_res.status_code != 200:
                 return []
                 
