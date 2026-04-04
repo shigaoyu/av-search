@@ -3,7 +3,8 @@ from config import Config
 from engine import get_crawlers
 from engine.manager import MetadataManager
 import re
-import requests
+import httpx
+import asyncio
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -20,9 +21,7 @@ def proxy_image():
     if not url: return "No URL", 400
     
     # Use global proxy config if available
-    proxies = {}
-    if hasattr(Config, 'PROXY') and Config.PROXY:
-        proxies = {"http": Config.PROXY, "https": Config.PROXY}
+    proxy = Config.PROXY if hasattr(Config, 'PROXY') and Config.PROXY else None
     
     try:
         # Determine the best referer based on the target URL
@@ -37,12 +36,13 @@ def proxy_image():
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
-        # Disable verification for convenience with some proxies
-        resp = requests.get(url, headers=headers, proxies=proxies, timeout=15, verify=False)
-        return Response(resp.content, resp.status_code, {
-            "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
-            "Cache-Control": "max-age=86400"
-        })
+        
+        with httpx.Client(proxy=proxy, follow_redirects=True, verify=False, timeout=15.0) as client:
+            resp = client.get(url, headers=headers)
+            return Response(resp.content, resp.status_code, {
+                "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
+                "Cache-Control": "max-age=86400"
+            })
     except Exception as e:
         print(f"Proxy Image Error: {e}")
         return "Error", 500

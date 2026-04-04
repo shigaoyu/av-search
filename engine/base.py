@@ -1,41 +1,27 @@
-import requests
+import httpx
 from bs4 import BeautifulSoup
-import urllib3
-
-# Suppress insecure request warnings if we disable verify
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class BaseCrawler:
     def __init__(self, config):
         self.config = config
-        self.session = requests.Session()
-        # Modern headers to look like a real browser
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
-        })
-        
         proxy = config.get('PROXY')
-        if proxy:
-            self.session.proxies = {
-                'http': proxy,
-                'https': proxy,
+        self.client = httpx.Client(
+            proxy=proxy if proxy else None,
+            follow_redirects=True,
+            verify=False,
+            timeout=15.0,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             }
+        )
 
     def fetch_page(self, url, retry=2):
         for i in range(retry + 1):
             try:
                 print(f"Fetching: {url} (Attempt {i+1})")
-                # Sometimes verify=False helps with SSL issues in restricted environments
-                response = self.session.get(url, timeout=15, verify=False)
+                response = self.client.get(url)
                 
                 if response.status_code == 403:
                     print(f"403 Forbidden for {url}")

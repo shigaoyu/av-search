@@ -20,8 +20,8 @@ class JavBusCrawler(BaseCrawler):
                 
             # Set cookies for each mirror
             domain = base.split('//')[1]
-            self.session.cookies.set('existmag', 'mag', domain=domain)
-            self.session.cookies.set('age', '18', domain=domain)
+            self.client.cookies.set('existmag', 'mag', domain=domain)
+            self.client.cookies.set('age', '18', domain=domain)
             
             soup = self.fetch_page(search_url)
             if not soup:
@@ -202,7 +202,7 @@ class JavBusCrawler(BaseCrawler):
             elif 'buscdn.me' in detail_url: domain = "https://www.buscdn.me"
             elif 'busun.me' in detail_url: domain = "https://www.busun.me"
 
-            response = self.session.get(detail_url, timeout=10, verify=False)
+            response = self.client.get(detail_url)
             if not response or response.status_code != 200:
                 return []
             
@@ -220,7 +220,7 @@ class JavBusCrawler(BaseCrawler):
             img = re.search(r"var img = '(.+?)';", script_text).group(1)
             
             ajax_url = f"{domain}/ajax/uncensored-search.php?gid={gid}&lang=zh&img={img}&uc={uc}&floor={100}"
-            ajax_res = self.session.get(ajax_url, timeout=10, verify=False)
+            ajax_res = self.client.get(ajax_url)
             if not ajax_res or ajax_res.status_code != 200:
                 return []
                 
