@@ -10,6 +10,7 @@ class BaseCrawler:
             follow_redirects=True,
             verify=False,
             timeout=15.0,
+            http1=True, # Avoid HTTP/2 issues with some proxies
             headers={
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -27,7 +28,7 @@ class BaseCrawler:
                     print(f"403 Forbidden for {url}")
                     continue
                     
-                if 'driver-verify' in response.url:
+                if 'driver-verify' in str(response.url):
                     print(f"Verification triggered at {url}")
                     continue
                     

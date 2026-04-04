@@ -86,21 +86,12 @@ class JavBusCrawler(BaseCrawler):
                     if '/pics/thumb/' in cover:
                         path = cover.split('/pics/thumb/')[1]
                         thumb = f"https://pics.javbus.com/pics/thumb/{path}"
-                        # JAVBus cover usually has _b suffix
-                        if '.' in path:
-                            name, ext = path.rsplit('.', 1)
-                            cover = f"https://pics.javbus.com/pics/cover/{name}_b.{ext}"
-                        else:
-                            cover = f"https://pics.javbus.com/pics/cover/{path}"
+                        # JAVBus cover usually has _b suffix, but thumb is more reliable
+                        cover = f"https://pics.javbus.com/pics/cover/{path.replace('.', '_b.')}" if '.' in path else thumb
                     elif '/pics/cover/' in cover:
                         path = cover.split('/pics/cover/')[1]
                         cover = f"https://pics.javbus.com/pics/cover/{path}"
-                        # Reverse to get thumb
-                        if '_b.' in path:
-                            thumb_path = path.replace('_b.', '.')
-                            thumb = f"https://pics.javbus.com/pics/thumb/{thumb_path}"
-                        else:
-                            thumb = f"https://pics.javbus.com/pics/thumb/{path}"
+                        thumb = f"https://pics.javbus.com/pics/thumb/{path.replace('_b.', '.')}"
                     else:
                         thumb = cover
                 

@@ -37,7 +37,7 @@ def proxy_image():
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
         
-        with httpx.Client(proxy=proxy, follow_redirects=True, verify=False, timeout=15.0) as client:
+        with httpx.Client(proxy=proxy, follow_redirects=True, verify=False, timeout=15.0, http1=True) as client:
             resp = client.get(url, headers=headers)
             return Response(resp.content, resp.status_code, {
                 "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
