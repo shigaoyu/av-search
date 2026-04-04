@@ -30,7 +30,7 @@ def search():
             print(f"Crawler error: {e}")
     
     # Enrichment: If no cover, try to find one using MetadataManager
-    results = metadata_mgr.enrich_results(results)
+    # results = metadata_mgr.enrich_results(results) # We will do this in parallel below
     
     # Simple deduplication by magnet
     seen_magnets = set()
@@ -64,19 +64,18 @@ def search():
     from concurrent.futures import ThreadPoolExecutor
     def fill_metadata(item):
         if not item.get('cover') or item['cover'] == '':
-            # Try to get from metadata-rich sources
-            for crawler in crawlers:
-                if hasattr(crawler, 'get_metadata'):
-                    meta = crawler.get_metadata(item['code'])
-                    if meta and meta.get('cover'):
-                        item['cover'] = meta['cover']
-                        if meta.get('title'): item['title'] = meta['title']
-                        if meta.get('date'): item['date'] = meta['date']
-                        break
+            # Try to get from metadata manager which coordinates crawlers
+            meta = metadata_mgr.get_metadata(item['code'])
+            if meta and meta.get('cover'):
+                item['cover'] = meta['cover']
+                if not item.get('title') or item.get('title') == 'No Title':
+                    item['title'] = meta['title']
+                if not item.get('date') or item.get('date') == 'Unknown':
+                    item['date'] = meta['date']
         return item
 
     # Limit to top 20 for completion to keep it fast
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         unique_results[:20] = list(executor.map(fill_metadata, unique_results[:20]))
 
     # Pagination logic

@@ -18,17 +18,11 @@ class MetadataManager:
             return self.cache[code]
             
         # Try JavBus first
-        results = self.javbus.search(code, fetch_magnets=False)
-        if results:
-            best = results[0] # Usually the first result is the best match
-            metadata = {
-                'title': best['title'],
-                'cover': best['cover'],
-                'code': best['code'],
-                'date': best['date']
-            }
-            self.cache[code] = metadata
-            return metadata
+        if hasattr(self.javbus, 'get_metadata'):
+            meta = self.javbus.get_metadata(code)
+            if meta:
+                self.cache[code] = meta
+                return meta
             
         # Try JavDB
         metadata = self.javdb.get_metadata(code)

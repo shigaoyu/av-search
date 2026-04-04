@@ -6,48 +6,68 @@ from concurrent.futures import ThreadPoolExecutor
 class JavBusCrawler(BaseCrawler):
     BASE_URL = "https://www.buscdn.me" # Censored default mirror
 
+    def get_metadata(self, code):
+        """Metadata completion interface for Manager."""
+        results = self.search(code, fetch_magnets=False)
+        if results:
+            # Match the code exactly if possible
+            for r in results:
+                if r['code'].upper() == code.upper():
+                    return r
+            return results[0]
+        return None
+
     def search(self, query, type='all', page=1, fetch_magnets=True):
-        # We try to search on the appropriate mirror based on type
-        base = "https://www.buscdn.me"
+        # Mirror rotation for stability
+        mirrors = ["https://www.buscdn.me", "https://www.javbus.com", "https://www.busun.me"]
         if type == 'uncensored':
-            base = "https://www.busun.me"
+            mirrors = ["https://www.busun.me", "https://www.buscdn.me"]
         
-        if not query:
-            search_url = f"{base}/page/{page}" if page > 1 else base
-        else:
-            search_url = f"{base}/search/{query}/{page}"
-            
-        try:
-            # Set cookies for age verification
-            self.session.cookies.set('existmag', 'mag', domain='www.buscdn.me')
-            self.session.cookies.set('existmag', 'mag', domain='www.busun.me')
-            self.session.cookies.set('existmag', 'mag', domain='www.javbus.com')
-            
-            response = self.session.get(search_url, timeout=15, allow_redirects=True)
-            if not response or response.status_code != 200:
-                # Try fallback mirror if search fails
-                if base == "https://www.buscdn.me":
-                    base = "https://www.javbus.com"
-                    search_url = f"{base}/search/{query}/{page}" if query else f"{base}/page/{page}"
-                    response = self.session.get(search_url, timeout=15)
-                
-            if not response or response.status_code != 200:
-                return []
-                
-            if 'driver-verify' in response.url:
-                print(f"JAVBus Verification triggered at {response.url}")
-                return []
-                
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # If search results are empty, Waterfall won't exist
-            if not query or '/search/' in response.url:
-                return self.parse_list_page(soup, base, fetch_magnets)
+        last_error = None
+        for base in mirrors:
+            if not query:
+                search_url = f"{base}/page/{page}" if page > 1 else base
             else:
-                return self.parse_detail_page(soup, response.url, base, fetch_magnets)
-        except Exception as e:
-            print(f"JavBus search error: {e}")
-            return []
+                search_url = f"{base}/search/{query}/{page}"
+                
+            try:
+                # Set cookies for age verification
+                self.session.cookies.set('existmag', 'mag', domain='www.buscdn.me')
+                self.session.cookies.set('existmag', 'mag', domain='www.busun.me')
+                self.session.cookies.set('existmag', 'mag', domain='www.javbus.com')
+                
+                response = self.session.get(search_url, timeout=10, allow_redirects=True)
+                if not response or response.status_code != 200:
+                    continue
+                    
+                if 'driver-verify' in response.url:
+                    print(f"JAVBus Verification triggered at {response.url}")
+                    continue
+                    
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # If search results are empty, Waterfall won't exist
+                if not query or '/search/' in response.url:
+                    results = self.parse_list_page(soup, base, fetch_magnets)
+                    if results: return results
+                else:
+                    results = self.parse_detail_page(soup, response.url, base, fetch_magnets)
+                    if results: return results
+            except Exception as e:
+                last_error = e
+                print(f"JavBus mirror {base} failed: {e}")
+                continue
+        
+        if last_error:
+            print(f"JavBus search all mirrors failed. Last error: {last_error}")
+        return []
+
+    def get_metadata(self, code):
+        """Standard interface for MetadataManager."""
+        results = self.search(code, fetch_magnets=False)
+        if results:
+            return results[0]
+        return None
 
     def parse_list_page(self, soup, base, fetch_magnets=True):
         results = []

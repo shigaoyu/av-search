@@ -22,47 +22,44 @@ class SukebeiCrawler(BaseCrawler):
         soup = self.fetch_page(search_url)
 
         results = []
-        rows = soup.select("tr.success, tr.default, tr.danger")
+        rows = soup.select("tr.success, tr.default, tr.danger, tr")
         for row in rows:
             cols = row.select("td")
-            if len(cols) < 6: continue
+            if len(cols) < 5: continue
             
-            # Category
-            category = cols[0].select_one("a")['title']
-            if "Art - Censored" not in category and "Art - Uncensored" not in category:
-                # Actually JAV is 2_2 (Censored) or 2_3 (Uncensored)
-                # But our filter c=2_2 should handle it.
-                pass
+            # Title & Link extraction is tricky due to varying columns
+            title_tag = row.select_one("a[href^='/view/']")
+            if not title_tag: continue
             
-            # Title & Link
-            title_tag = cols[1].select_one("a:not(.comments)")
             title = title_tag.text.strip()
             detail_url = self.BASE_URL + title_tag['href']
             
-            # Magnet
-            magnet = cols[2].select("a")[1]['href'] # Usually the second link is magnet
+            # Magnet extraction (look for magnet: link in any a tag)
+            magnet_tag = row.select_one("a[href^='magnet:?']")
+            if not magnet_tag: continue
+            magnet = magnet_tag['href']
             
-            # Size
-            size = cols[3].text.strip()
-            
-            # Date
-            date = cols[4].text.strip()
-            
-            # Seeders & Leechers (Hotness indicators)
-            seeders = cols[5].text.strip()
-            leechers = cols[6].text.strip()
-            downloads = cols[7].text.strip()
+            # Size, Date, Seeders, etc. are usually at the end
+            size = cols[-5].text.strip()
+            date = cols[-4].text.strip()
+            seeders = cols[-3].text.strip()
+            leechers = cols[-2].text.strip()
+            downloads = cols[-1].text.strip()
             
             # Try to extract code from title
             code_match = re.search(r'([A-Z]{2,10}-\d{2,10})', title, re.I)
+            if not code_match:
+                # Try a broader match for codes like T28-xxx or just digits
+                code_match = re.search(r'([A-Z\d]{3,10}-\d{2,10})', title, re.I)
+            
             code = code_match.group(1).upper() if code_match else "Unknown"
             
-            is_chinese = "字幕" in title or "中文字幕" in title or "-C" in title.upper() or "CN" in title.upper()
+            is_chinese = any(x in title for x in ["字幕", "中文字幕", "CN", "SUB"]) or "-C" in title.upper()
             
             results.append({
                 'source': 'Sukebei',
                 'title': title,
-                'cover': '', # Use empty to trigger frontend code-based placeholder
+                'cover': '', # Always include field, even if empty
                 'code': code,
                 'date': date,
                 'magnet': magnet,
