@@ -6,12 +6,17 @@ import re
 import httpx
 import requests
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+import time
 
 app = Flask(__name__)
 app.config.from_object(Config)
 crawlers = get_crawlers(app.config)
 metadata_mgr = MetadataManager(app.config)
+
+# Global Search Cache: { "query_type_page": { "data": results, "time": timestamp } }
+SEARCH_CACHE = {}
+CACHE_EXPIRY = 3600 # 1 hour
 
 @app.route('/')
 def index():
@@ -77,70 +82,80 @@ def search():
     chinese_only = request.args.get('chinese', 'false').lower() == 'true'
     page = int(request.args.get('page', 1))
     
+    # 1. Check Cache for Speed
+    cache_key = f"{query}_{movie_type}_{page}"
+    if cache_key in SEARCH_CACHE:
+        entry = SEARCH_CACHE[cache_key]
+        if time.time() - entry['time'] < CACHE_EXPIRY:
+            print(f"Cache Hit for: {cache_key}")
+            return jsonify(self_sort(entry['data'], sort_type, chinese_only))
+    
     results = []
     print(f"Searching: '{query}' (Type: {movie_type}, Page: {page})")
-    # Task: Parallel search across all crawlers for speed
+    
+    # Task: Parallel search with HARD TIMEOUT (10s)
     def fetch_results(crawler):
         try:
-            # Set a timeout per crawler to prevent one slow source from blocking everything
+            # Add internal timeout check if crawler supports it, 
+            # or just rely on the ThreadPool wait
             return crawler.search(query, type=movie_type, page=page)
         except Exception as e:
             print(f"Crawler error ({crawler.__class__.__name__}): {e}")
             return []
 
-    # Use a larger thread pool for the initial search to maximize concurrency
     with ThreadPoolExecutor(max_workers=15) as executor:
-        c_results = list(executor.map(fetch_results, crawlers))
-        for res in c_results:
-            results.extend(res)
+        # Submit all tasks
+        future_to_crawler = {executor.submit(fetch_results, c): c for c in crawlers}
+        
+        # Wait for all futures with a timeout of 12 seconds total
+        done, not_done = wait(future_to_crawler.keys(), timeout=12)
+        
+        for future in done:
+            try:
+                results.extend(future.result())
+            except Exception as e:
+                print(f"Future result error: {e}")
+                
+        for future in not_done:
+            crawler = future_to_crawler[future]
+            print(f"Crawler timed out: {crawler.__class__.__name__}")
+            # We don't cancel because ThreadPoolExecutor.submit futures aren't easily cancelable if running
     
+    # Store in cache BEFORE enrichment to keep cache clean
+    SEARCH_CACHE[cache_key] = {'data': results, 'time': time.time()}
+    
+    return jsonify(self_sort(results, sort_type, chinese_only))
+
+def self_sort(results, sort_type, chinese_only):
     # Simple deduplication
     seen = set()
     unique = []
     for r in results:
-        if r['magnet'] not in seen:
-            seen.add(r['magnet'])
-            if chinese_only and not r['is_chinese']: continue
+        # Use magnet as unique ID
+        mag = r.get('magnet', '')
+        if mag not in seen:
+            seen.add(mag)
+            if chinese_only and not r.get('is_chinese'): continue
             unique.append(r)
 
     # Sort
     def sort_key(item):
-        size = parse_size(item['size'])
+        size = parse_size(item.get('size', '0'))
         if sort_type == 'size': return (size,)
-        elif sort_type == 'date': return (item['date'] if '-' in item['date'] else '0000-00-00',)
+        elif sort_type == 'date': return (item.get('date', '0000-00-00') if '-' in item.get('date', '') else '0000-00-00',)
         elif sort_type == 'seeders': return (int(item.get('seeders', 0) or 0),)
         elif sort_type == 'downloads': return (int(item.get('downloads', 0) or 0),)
-        else: return (1 if item['is_chinese'] else 0, size)
+        else: return (1 if item.get('is_chinese') else 0, size)
 
     unique.sort(key=sort_key, reverse=True)
     
-    # Pagination
-    paginated = unique[(page-1)*20 : page*20]
+    # Limit to current page (20 results)
+    paginated = unique[:20] 
     
-    # Enrichment
-    def fill_metadata(item):
-        code = item.get('code', 'Unknown')
-        if not item.get('cover') or 'placeholder' in item.get('cover', ''):
-            meta = metadata_mgr.get_metadata(code)
-            if meta:
-                item['cover'] = meta.get('cover', '')
-                item['thumb'] = meta.get('thumb', '')
-                if not item.get('title') or item.get('title') == 'No Title':
-                    item['title'] = meta.get('title', 'Unknown')
-                if not item.get('date') or item.get('date') == 'Unknown':
-                    item['date'] = meta.get('date', 'Unknown')
-        
-        # Ensure image fields
-        item['cover'] = item.get('cover') or f"https://via.placeholder.com/800x1200?text={code}"
-        item['thumb'] = item.get('thumb') or item['cover'].replace("800x1200", "300x450")
-        item['image'] = item['cover']
-        item['img_url'] = item['cover']
-        return item
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        paginated = list(executor.map(fill_metadata, paginated))
+    # Enrichment - Optimized Parallel Enrichment from MetadataManager
+    paginated = metadata_mgr.enrich_results_parallel(paginated)
     
-    return jsonify(paginated)
+    return paginated
 
 def parse_size(s):
     m = re.search(r"(\d+\.?\d*)\s*(GB|MB|GiB|MiB|KB)", s, re.I)
