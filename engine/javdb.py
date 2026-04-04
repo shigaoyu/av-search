@@ -83,7 +83,9 @@ class JavDbCrawler(BaseCrawler):
         """Specifically fetch metadata for a code."""
         results = self.search(code)
         # Find the best match
+        target = code.upper().replace('-', '')
         for r in results:
-            if code.upper() in r['code'].upper() or r['code'].upper() in code.upper():
+            clean_r = r['code'].upper().replace('-', '')
+            if target in clean_r or clean_r in target:
                 return r
         return None

@@ -61,7 +61,12 @@ def search():
 
     unique_results.sort(key=sort_key, reverse=True)
     
-    # Task #18: Metadata auto-completion (Async)
+    # Pagination logic
+    start_idx = (page - 1) * 20
+    end_idx = start_idx + 20
+    paginated_results = unique_results[start_idx:end_idx]
+    
+    # Task #18: Metadata auto-completion (Async) for CURRENT PAGE ONLY
     # If some items (like Sukebei) lack covers, try to fill them from JavBus/JavDB
     from concurrent.futures import ThreadPoolExecutor
     def fill_metadata(item):
@@ -70,31 +75,36 @@ def search():
         if not item.get('cover') or 'placeholder' in item.get('cover', ''):
             meta = metadata_mgr.get_metadata(code)
             if meta:
+                # Add multiple alias fields for compatibility
                 item['cover'] = meta.get('cover', '')
+                item['image'] = item['cover']
+                item['img_url'] = item['cover']
                 item['thumb'] = meta.get('thumb', '')
                 if not item.get('title') or item.get('title') == 'No Title':
                     item['title'] = meta.get('title', 'Unknown')
                 if not item.get('date') or item.get('date') == 'Unknown':
                     item['date'] = meta.get('date', 'Unknown')
         
-        # Ensure image url related fields are ALWAYS present
+        # Ensure image url related fields are ALWAYS present (Aliases for safety)
         if 'cover' not in item: item['cover'] = ""
+        item['image'] = item.get('cover', "")
+        item['img_url'] = item.get('cover', "")
         if 'thumb' not in item: item['thumb'] = ""
         
-        # Final fallback for empty covers
-        if not item['cover']:
+        # Final fallback for empty covers (Smart dynamic placeholder)
+        if not item['cover'] or item['cover'] == "":
+            # Generate a more varied placeholder or use a stable one
             placeholder = f"https://via.placeholder.com/800x1200?text={code}"
             item['cover'] = placeholder
+            item['image'] = placeholder
+            item['img_url'] = placeholder
             item['thumb'] = placeholder.replace("800x1200", "300x450")
             
         return item
 
-    # Limit to top 20 for completion to keep it fast
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        unique_results[:20] = list(executor.map(fill_metadata, unique_results[:20]))
-
-    # Pagination logic
-    paginated_results = unique_results[:20]
+    # Enrich only the items being returned
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        paginated_results = list(executor.map(fill_metadata, paginated_results))
     
     return jsonify(paginated_results)
 
