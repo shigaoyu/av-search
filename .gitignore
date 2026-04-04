@@ -18,6 +18,7 @@ build/
 
 # 临时/调试文件
 *.html
+!templates/*.html
 
 # 虚拟环境
 venv/
