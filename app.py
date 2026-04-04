@@ -1,8 +1,9 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, Response
 from config import Config
 from engine import get_crawlers
 from engine.manager import MetadataManager
 import re
+import requests
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -12,6 +13,39 @@ metadata_mgr = MetadataManager(app.config)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/proxy_image')
+def proxy_image():
+    url = request.args.get('url')
+    if not url: return "No URL", 400
+    
+    # Use global proxy config if available
+    proxies = {}
+    if hasattr(Config, 'PROXY') and Config.PROXY:
+        proxies = {"http": Config.PROXY, "https": Config.PROXY}
+    
+    try:
+        # Determine the best referer based on the target URL
+        referer = "https://www.google.com/"
+        if "javbus" in url: referer = "https://www.javbus.com/"
+        elif "javdb" in url: referer = "https://javdb.com/"
+        elif "nyaa" in url or "sukebei" in url: referer = "https://sukebei.nyaa.si/"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": referer,
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        }
+        # Disable verification for convenience with some proxies
+        resp = requests.get(url, headers=headers, proxies=proxies, timeout=15, verify=False)
+        return Response(resp.content, resp.status_code, {
+            "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
+            "Cache-Control": "max-age=86400"
+        })
+    except Exception as e:
+        print(f"Proxy Image Error: {e}")
+        return "Error", 500
 
 @app.route('/api/search')
 def search():
