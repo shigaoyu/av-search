@@ -70,7 +70,7 @@ class JavBusCrawler(BaseCrawler):
                 if cover_tag:
                     src = cover_tag.get('data-original') or cover_tag.get('src') or ""
                 
-                # Robust URL handling
+                # Robust URL handling - Keep original domain for better proxying
                 if src.startswith('//'):
                     cover = 'https:' + src
                 elif src.startswith('http'):
@@ -80,20 +80,12 @@ class JavBusCrawler(BaseCrawler):
                 else:
                     cover = ""
                 
-                # Create cover and thumb
-                thumb = ""
-                if cover:
-                    if '/pics/thumb/' in cover:
-                        path = cover.split('/pics/thumb/')[1]
-                        thumb = f"https://pics.javbus.com/pics/thumb/{path}"
-                        # JAVBus cover usually has _b suffix, but thumb is more reliable
-                        cover = f"https://pics.javbus.com/pics/cover/{path.replace('.', '_b.')}" if '.' in path else thumb
-                    elif '/pics/cover/' in cover:
-                        path = cover.split('/pics/cover/')[1]
-                        cover = f"https://pics.javbus.com/pics/cover/{path}"
-                        thumb = f"https://pics.javbus.com/pics/thumb/{path.replace('_b.', '.')}"
-                    else:
-                        thumb = cover
+                # Thumb is just the cover if we can't determine it
+                thumb = cover
+                if cover and '/pics/cover/' in cover:
+                    thumb = cover.replace('/pics/cover/', '/pics/thumb/').replace('_b.', '.')
+                elif cover and '/pics/thumb/' in cover:
+                    cover = cover.replace('/pics/thumb/', '/pics/cover/').replace('.jpg', '_b.jpg')
                 
                 code_tags = item.select("date")
                 code = code_tags[0].text.strip() if len(code_tags) > 0 else "Unknown"
@@ -145,14 +137,11 @@ class JavBusCrawler(BaseCrawler):
             elif src: cover = base.rstrip('/') + '/' + src.lstrip('/')
             else: cover = ""
                 
-            thumb = ""
-            if cover:
-                if '/pics/cover/' in cover:
-                    path = cover.split('/pics/cover/')[1]
-                    cover = f"https://pics.javbus.com/pics/cover/{path}"
-                    thumb = f"https://pics.javbus.com/pics/thumb/{path}"
-                else:
-                    thumb = cover
+            thumb = cover
+            if cover and '/pics/cover/' in cover:
+                thumb = cover.replace('/pics/cover/', '/pics/thumb/').replace('_b.', '.')
+            elif cover and '/pics/thumb/' in cover:
+                cover = cover.replace('/pics/thumb/', '/pics/cover/').replace('.jpg', '_b.jpg')
             
             info_ps = soup.select(".info p")
             code, date = "Unknown", "Unknown"

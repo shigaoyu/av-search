@@ -4,7 +4,9 @@ from bs4 import BeautifulSoup
 class BaseCrawler:
     def __init__(self, config):
         self.config = config
-        proxy = config.get('PROXY')
+        # Handle both class (Config) and dict/FlaskConfig (app.config)
+        proxy = config.get('PROXY') if hasattr(config, 'get') else getattr(config, 'PROXY', None)
+        
         self.client = httpx.Client(
             proxy=proxy if proxy else None,
             follow_redirects=True,

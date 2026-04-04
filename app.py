@@ -23,26 +23,34 @@ def proxy_image():
     # Use global proxy config if available
     proxy = Config.PROXY if hasattr(Config, 'PROXY') and Config.PROXY else None
     
-    try:
-        # Determine the best referer based on the target URL
-        referer = "https://www.google.com/"
-        if "javbus" in url: referer = "https://www.javbus.com/"
-        elif "javdb" in url: referer = "https://javdb.com/"
-        elif "nyaa" in url or "sukebei" in url: referer = "https://sukebei.nyaa.si/"
+    def fetch_with_referer(target_url):
+        # Determine the best referer based on the target URL (Simplified like Download Team)
+        referer = "https://www.javbus.com/" if "javbus" in target_url or "pics" in target_url else "https://javdb.com/"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": referer,
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
         
-        with httpx.Client(proxy=proxy, follow_redirects=True, verify=False, timeout=15.0, http1=True) as client:
-            resp = client.get(url, headers=headers)
-            return Response(resp.content, resp.status_code, {
-                "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
-                "Cache-Control": "max-age=86400"
-            })
+        # Simple client like Download Team
+        with httpx.Client(proxy=proxy, follow_redirects=True, timeout=15.0) as client:
+            print(f"Proxying: {target_url}")
+            resp = client.get(target_url, headers=headers)
+            return resp
+
+    try:
+        resp = fetch_with_referer(url)
+        
+        # If JavBus high-res (_b.jpg) fails, try thumbnail as fallback
+        if resp.status_code == 404 and "_b.jpg" in url:
+            fallback_url = url.replace("_b.jpg", ".jpg").replace("/cover/", "/thumb/")
+            print(f"Proxy: 404 for high-res, trying fallback: {fallback_url}")
+            resp = fetch_with_referer(fallback_url)
+            
+        return Response(resp.content, resp.status_code, {
+            "Content-Type": resp.headers.get("Content-Type", "image/jpeg"), 
+            "Cache-Control": "max-age=86400"
+        })
     except Exception as e:
         print(f"Proxy Image Error: {e}")
         return "Error", 500
