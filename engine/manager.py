@@ -12,25 +12,44 @@ class MetadataManager:
     def get_metadata(self, code):
         """Fetch metadata for a given code (ID). Try multiple sources."""
         if not code or code == 'Unknown':
-            return None
+            return self._get_placeholder(code)
             
         if code in self.cache:
             return self.cache[code]
             
         # Try JavBus first
         if hasattr(self.javbus, 'get_metadata'):
-            meta = self.javbus.get_metadata(code)
-            if meta:
-                self.cache[code] = meta
-                return meta
+            try:
+                meta = self.javbus.get_metadata(code)
+                if meta and meta.get('cover'):
+                    # Success!
+                    self.cache[code] = meta
+                    return meta
+            except Exception as e:
+                print(f"Metadata fetch (JavBus) failed: {e}")
             
         # Try JavDB
-        metadata = self.javdb.get_metadata(code)
-        if metadata:
-            self.cache[code] = metadata
-            return metadata
+        try:
+            metadata = self.javdb.get_metadata(code)
+            if metadata and metadata.get('cover'):
+                self.cache[code] = metadata
+                return metadata
+        except Exception as e:
+            print(f"Metadata fetch (JavDB) failed: {e}")
             
-        return None
+        # Last resort: Placeholder but with the code
+        return self._get_placeholder(code)
+
+    def _get_placeholder(self, code):
+        """Return a structured placeholder metadata."""
+        # Using a more robust placeholder service or just a text-based one
+        return {
+            'title': f'Resource: {code}',
+            'cover': f'https://via.placeholder.com/800x1200?text={code}',
+            'thumb': f'https://via.placeholder.com/300x450?text={code}',
+            'code': code,
+            'date': 'Unknown'
+        }
 
     def enrich_results(self, results):
         """Enrich results that are missing covers or other metadata."""

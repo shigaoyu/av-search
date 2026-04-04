@@ -60,6 +60,7 @@ class SukebeiCrawler(BaseCrawler):
                 'source': 'Sukebei',
                 'title': title,
                 'cover': '', # Always include field, even if empty
+                'thumb': '', 
                 'code': code,
                 'date': date,
                 'magnet': magnet,

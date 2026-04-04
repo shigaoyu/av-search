@@ -1,51 +1,57 @@
 import requests
 from bs4 import BeautifulSoup
+import urllib3
+
+# Suppress insecure request warnings if we disable verify
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class BaseCrawler:
     def __init__(self, config):
         self.config = config
         self.session = requests.Session()
+        # Modern headers to look like a real browser
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Sec-Ch-Ua': '\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '\"macOS\"',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'none',
             'Sec-Fetch-User': '?1',
-            'Upgrade-Insecure-Requests': '1',
         })
-        # Add basic cookies to bypass some checks
-        self.session.cookies.set('existmag', 'mag')
-        self.session.cookies.set('age', '18')
         
-        if config.get('PROXY'):
+        proxy = config.get('PROXY')
+        if proxy:
             self.session.proxies = {
-                'http': config.get('PROXY'),
-                'https': config.get('PROXY'),
+                'http': proxy,
+                'https': proxy,
             }
 
-    def fetch_page(self, url):
-        try:
-            print(f"Fetching: {url}")
-            response = self.session.get(url, timeout=15)
-            if 'driver-verify' in response.url:
-                print(f"Warning: JAVBus verification triggered at {url}")
-                return None
-            response.raise_for_status()
-            # Use html.parser as fallback if lxml is missing
+    def fetch_page(self, url, retry=2):
+        for i in range(retry + 1):
             try:
-                return BeautifulSoup(response.text, 'lxml')
-            except Exception:
+                print(f"Fetching: {url} (Attempt {i+1})")
+                # Sometimes verify=False helps with SSL issues in restricted environments
+                response = self.session.get(url, timeout=15, verify=False)
+                
+                if response.status_code == 403:
+                    print(f"403 Forbidden for {url}")
+                    continue
+                    
+                if 'driver-verify' in response.url:
+                    print(f"Verification triggered at {url}")
+                    continue
+                    
+                response.raise_for_status()
                 return BeautifulSoup(response.text, 'html.parser')
-        except Exception as e:
-            print(f"Error fetching {url}: {e}")
-            return None
+            except Exception as e:
+                print(f"Attempt {i+1} failed for {url}: {e}")
+                if i == retry:
+                    return None
+        return None
 
     def search(self, query):
         raise NotImplementedError

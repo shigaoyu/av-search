@@ -63,6 +63,7 @@ class JavDbCrawler(BaseCrawler):
                         'source': 'JavDB',
                         'title': title,
                         'cover': cover,
+                        'thumb': cover, # Use same for now
                         'code': code,
                         'date': date,
                         'magnet': '', # JavDB requires login/detail fetch for magnets usually

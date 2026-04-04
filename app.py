@@ -22,12 +22,14 @@ def search():
     page = int(request.args.get('page', 1))
     
     results = []
+    print(f"Searching for: '{query}' on crawlers...")
     for crawler in crawlers:
         try:
-            # Pass type and page to crawler search
-            results.extend(crawler.search(query, type=movie_type, page=page))
+            res = crawler.search(query, type=movie_type, page=page)
+            print(f"Crawler {crawler.__class__.__name__} found {len(res)} results.")
+            results.extend(res)
         except Exception as e:
-            print(f"Crawler error: {e}")
+            print(f"Crawler error ({crawler.__class__.__name__}): {e}")
     
     # Enrichment: If no cover, try to find one using MetadataManager
     # results = metadata_mgr.enrich_results(results) # We will do this in parallel below
@@ -63,15 +65,28 @@ def search():
     # If some items (like Sukebei) lack covers, try to fill them from JavBus/JavDB
     from concurrent.futures import ThreadPoolExecutor
     def fill_metadata(item):
-        if not item.get('cover') or item['cover'] == '':
-            # Try to get from metadata manager which coordinates crawlers
-            meta = metadata_mgr.get_metadata(item['code'])
-            if meta and meta.get('cover'):
-                item['cover'] = meta['cover']
+        code = item.get('code', 'Unknown')
+        # Always try to fetch metadata if cover is empty or looks like a placeholder
+        if not item.get('cover') or 'placeholder' in item.get('cover', ''):
+            meta = metadata_mgr.get_metadata(code)
+            if meta:
+                item['cover'] = meta.get('cover', '')
+                item['thumb'] = meta.get('thumb', '')
                 if not item.get('title') or item.get('title') == 'No Title':
-                    item['title'] = meta['title']
+                    item['title'] = meta.get('title', 'Unknown')
                 if not item.get('date') or item.get('date') == 'Unknown':
-                    item['date'] = meta['date']
+                    item['date'] = meta.get('date', 'Unknown')
+        
+        # Ensure image url related fields are ALWAYS present
+        if 'cover' not in item: item['cover'] = ""
+        if 'thumb' not in item: item['thumb'] = ""
+        
+        # Final fallback for empty covers
+        if not item['cover']:
+            placeholder = f"https://via.placeholder.com/800x1200?text={code}"
+            item['cover'] = placeholder
+            item['thumb'] = placeholder.replace("800x1200", "300x450")
+            
         return item
 
     # Limit to top 20 for completion to keep it fast
