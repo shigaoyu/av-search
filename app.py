@@ -79,12 +79,20 @@ def search():
     
     results = []
     print(f"Searching: '{query}' (Type: {movie_type}, Page: {page})")
-    for crawler in crawlers:
+    # Task: Parallel search across all crawlers for speed
+    def fetch_results(crawler):
         try:
-            res = crawler.search(query, type=movie_type, page=page)
-            results.extend(res)
+            # Set a timeout per crawler to prevent one slow source from blocking everything
+            return crawler.search(query, type=movie_type, page=page)
         except Exception as e:
             print(f"Crawler error ({crawler.__class__.__name__}): {e}")
+            return []
+
+    # Use a larger thread pool for the initial search to maximize concurrency
+    with ThreadPoolExecutor(max_workers=15) as executor:
+        c_results = list(executor.map(fetch_results, crawlers))
+        for res in c_results:
+            results.extend(res)
     
     # Simple deduplication
     seen = set()
@@ -101,6 +109,7 @@ def search():
         if sort_type == 'size': return (size,)
         elif sort_type == 'date': return (item['date'] if '-' in item['date'] else '0000-00-00',)
         elif sort_type == 'seeders': return (int(item.get('seeders', 0) or 0),)
+        elif sort_type == 'downloads': return (int(item.get('downloads', 0) or 0),)
         else: return (1 if item['is_chinese'] else 0, size)
 
     unique.sort(key=sort_key, reverse=True)

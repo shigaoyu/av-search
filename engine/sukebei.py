@@ -42,9 +42,13 @@ class SukebeiCrawler(BaseCrawler):
             # Size, Date, Seeders, etc. are usually at the end
             size = cols[-5].text.strip()
             date = cols[-4].text.strip()
-            seeders = cols[-3].text.strip()
-            leechers = cols[-2].text.strip()
-            downloads = cols[-1].text.strip()
+            # Clean numeric values
+            def clean_num(text):
+                return re.sub(r'[^\d]', '', text) or '0'
+                
+            seeders = clean_num(cols[-3].text.strip())
+            leechers = clean_num(cols[-2].text.strip())
+            downloads = clean_num(cols[-1].text.strip())
             
             # Try to extract code from title
             code_match = re.search(r'([A-Z]{2,10}-\d{2,10})', title, re.I)
