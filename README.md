@@ -27,7 +27,7 @@
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境
+### 2. 配置环境（可选）
 
 在项目根目录下创建一个 `.env` 文件（可选），或直接修改 `config.py`。
 
