@@ -57,12 +57,5 @@ python app.py
 - `static/`: 静态资源文件。
 - `requirements.txt`: Python 依赖库列表。
 
-## 📝 待办事项 (TODO)
-
-- [ ] JAVDB 爬虫集成 (Cloudflare 绕过)
-- [ ] 搜索历史持久化 (LocalStorage)
-- [ ] 批量下载功能
-- [ ] 下载进度实时监控 (WebSocket)
-
 ---
 *本项目仅供技术交流与学习使用。*
