@@ -1,6 +1,9 @@
 # AV Resource Searcher (AV 资源搜索下载器)
 
 一个现代化的“番号下载器”，支持多源聚合、智能排序及远程下载管理。
+项目运行效果图
+![alt text](image-1.png)
+![alt text](image.png)
 
 ## 🌟 核心功能
 
