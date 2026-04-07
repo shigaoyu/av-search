@@ -46,7 +46,7 @@ ARIA2_SECRET=your_aria2_token
 python app.py
 ```
 
-访问 `http://localhost:5000` 即可开始使用。
+访问 `http://localhost:5001` 即可开始使用。
 
 ## 📁 项目结构
 
@@ -58,4 +58,5 @@ python app.py
 - `requirements.txt`: Python 依赖库列表。
 
 ---
-*本项目仅供技术交流与学习使用。*
+
+_本项目仅供技术交流与学习使用。_
